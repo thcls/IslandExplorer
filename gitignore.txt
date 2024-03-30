@@ -1,0 +1,13 @@
+# Módulos do Node.js
+/node_modules
+
+# Arquivos de cache
+npm-debug.log
+yarn-error.log
+
+# Diretório de dependências do Yarn
+.yarn/
+
+dist/app.js.map
+test.js
+.vscode
