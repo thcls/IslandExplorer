@@ -12,7 +12,7 @@ class Monster {
     constructor(position, timeLimit) {
         this.position = position;
         this.attack = randomNum(2, 20);
-        this.life = randomNum(6, 120);
+        this.life = randomNum(10, 100);
         this.lastTurnMove = timeLimit;
         this.icon = ['\u{1F40D}', '\u{1F406}', '\u{1F40A}', '\u{1F41C}'][randomNum(0, 3)];
     }
@@ -96,14 +96,15 @@ class Weapon {
     display() {
         this.position.element.textContent += this.icon;
     }
-    pickWeapon() {
+    pickWeapon(island) {
         this.position.element.textContent = this.position.element.textContent.replace(this.icon, '');
+        this.position = island[0];
     }
     msg() {
         const wMsg = {
             '\u{1F5E1}': "Uma espada antiga reluz em uma câmara secreta.",
-            '\u{1FA93}': "Um arco e flechas repousam em um recanto da floresta.",
-            '\u{1FA83}': "Um machado de guerra brilha em um túmulo antigo."
+            '\u{1FA93}': "Um machado de guerra brilha em um túmulo antigo.",
+            '\u{1FA83}': "Um Boomerang repousa em um recanto da floresta."
         };
         alert(wMsg[this.icon]);
     }
@@ -215,6 +216,7 @@ function generateIsland(MatrixSize, nodeMutipli, treasure, n) {
     if (!BFS(nodeList[0], treasure.position)) {
         location.reload();
     }
+    treasure.position.safe = true;
     nodeList[0].safe = true;
     return nodeList;
 }
@@ -239,11 +241,14 @@ function spawnCreatures(island, n, weaponList, timeLimit) {
                 });
             }
             else if (mwd % 3 === 1 && !(island[index].safe)) {
-                island[index].trapDamage = randomNum(4, 20);
+                island[index].trapDamage = randomNum(4, 15);
                 island[index].element.classList.add('trap');
             }
-            else {
+            else if (mwd % 3 === 2) {
                 weaponList.push(new Weapon(island[index]));
+            }
+            else {
+                mwd--;
             }
             mwd++;
         }
@@ -275,7 +280,7 @@ function fightOrFlight(island, monsters, timeLimit) {
         }
     }
 }
-function playerInput(monster, weapon, player, treasure) {
+function playerInput(monster, weapon, player, treasure, timeLimit) {
     var _a;
     let msg = '';
     let opCount = 0;
@@ -285,26 +290,42 @@ function playerInput(monster, weapon, player, treasure) {
         msg += `Opção ${opCount} - Atacar monstro.\n`;
         options[`${opCount}`] = () => {
             player.atackMonster(monster);
+            player.lastTurnMove = timeLimit;
         };
         opCount++;
         msg += `Opção ${opCount} - Sentindo-se sobrecarregado, você opta por uma retirada estratégica para evitar o perigo imediato.\n`;
         options[`${opCount}`] = () => {
-            player.run();
+            player.randomMove(monster);
+            player.lastTurnMove = timeLimit;
         };
     }
     if (weapon != undefined) {
         opCount++;
         msg += `Opção ${opCount} - Equipar a arma que você encontrou.\n`;
         options[`${opCount}`] = () => {
-            player.pickWeapon(weapon);
+            player.lastTurnMove = timeLimit;
+            if (player.weapon.durability <= 0) {
+                player.weapon = weapon;
+                player.pickWeapon(weapon);
+            }
+            else {
+                player.dropWeapon();
+                player.pickWeapon(weapon);
+            }
         };
         opCount++;
         msg += `Opção ${opCount} - Continuar sua jornada.\n`;
         options[`${opCount}`] = () => {
+            player.lastTurnMove = 0;
             return;
         };
     }
     if (((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)) && player.weapon.durability > 0) {
+        opCount++;
+        msg += `Opção ${opCount} - Pegar tesouro.\n`;
+        options[`${opCount}`] = () => {
+            treasure.getTreasure(player);
+        };
         opCount++;
         msg += `Opção ${opCount} - Soltar arma equipada.\n`;
         options[`${opCount}`] = () => {
@@ -317,22 +338,31 @@ function playerInput(monster, weapon, player, treasure) {
         return;
     }
     else {
-        alert(playerInput);
-        options[`${playerInput}`]();
+        do {
+            try {
+                options[`${playerInput}`]();
+            }
+            catch (error) {
+                console.error("Ocorreu um erro:", error.message);
+            }
+            finally {
+                break;
+            }
+        } while (true);
     }
 }
 function playerMove(player, island, monsterList, weaponList, treasure, timeLimit) {
     return __awaiter(this, void 0, void 0, function* () {
         var _a, _b;
         let path = [];
+        trapCheck(player);
+        player.serchHerb();
         let monster = monsterCheck(player, monsterList);
         let weapon = weaponCheck(player, weaponList);
-        trapCheck(player);
         if (monster != undefined || weapon != undefined || (player.weapon.durability > 0 && ((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)))) {
-            yield wait();
-            playerInput(monster, weapon, player, treasure);
+            playerInput(monster, weapon, player, treasure, timeLimit);
         }
-        if (player.timeLimit != timeLimit) {
+        if (player.lastTurnMove != timeLimit) {
             if ((_b = treasure.position) === null || _b === void 0 ? void 0 : _b.sameCoordenates(player.position)) {
                 treasure.position.element.innerText = treasure.position.element.innerText.replace(treasure.icon, '');
                 player.treasure = 100;
@@ -346,6 +376,10 @@ function playerMove(player, island, monsterList, weaponList, treasure, timeLimit
             if (path.length > 1) {
                 yield player.moveTo(path[1]);
             }
+            if (player.position.safe && !(island[0].sameCoordenates(player.position))) {
+                player.savePoint = true;
+                player.savePointPosition = player.position;
+            }
         }
     });
 }
@@ -356,11 +390,16 @@ function monstersMove(monsterList, island, timeLimit, player) {
     return __awaiter(this, void 0, void 0, function* () {
         monsterList.map(monster => {
             if (monster.position.sameCoordenates(player.position)) {
-                if (player.position.sameCoordenates(player.lastPosition)) {
-                    alert(`O monstro desfere um golpe certeiro, causando um ferimento profundo! (-${monster.attack} HP)`);
+                console.log(player.position.coordinates);
+                console.log(player.lastPosition.coordinates);
+                console.log(!player.position.sameCoordenates(player.lastPosition));
+                if (!player.position.sameCoordenates(player.lastPosition)) {
+                    monster.msg();
+                }
+                else {
+                    player.damage(monster.attack);
                 }
                 monster.lastTurnMove = timeLimit;
-                player.damage(monster.attack);
             }
             const monsterFight = monsterList.filter(((m) => monster.position.coordinates === m.position.coordinates));
             if (monsterFight.length > 1) {
@@ -405,7 +444,6 @@ function trapCheck(player) {
 function monsterCheck(player, monsterList) {
     for (let m of monsterList) {
         if (m.position.sameCoordenates(player.position)) {
-            m.msg();
             return m;
         }
     }
@@ -425,26 +463,43 @@ function main() {
         const nodeMutipli = 7;
         const n = MatrixSize * nodeMutipli;
         const weaponList = [];
+        const herbIcon = '\u{1F33F}';
         const treasure = {
             icon: '\u{1FA99}',
-            percent: 100
+            percent: 100,
+            dropTreasure(position) {
+                treasure.position.element.textContent = treasure.position.element.textContent + treasure.icon;
+                treasure.position = position;
+            },
+            getTreasure(player) {
+                player.treasure = this.percent;
+            }
         };
         const island = generateIsland(MatrixSize, nodeMutipli, treasure, n);
-        const checkPoints = [island[randomNum(1, n - 1)], island[randomNum(1, n - 1)]];
+        let checkPoints = [island[randomNum(1, n - 1)], island[randomNum(1, n - 1)]];
         const m = getEdgesNumber(island);
         let timeLimit = m * 3;
-        checkPoints.map((position) => {
+        for (let i = 0; i < 10; i++) {
+            island[randomNum(1, island.length - 1)].element.innerText += herbIcon;
+        }
+        checkPoints = checkPoints.map((position) => {
+            do {
+                position = island[randomNum(1, n - 1)];
+            } while (position.trapDamage > 0);
             position.element.classList.add('checkPoint');
+            position.safe = true;
+            return position;
         });
         const monsterList = yield spawnCreatures(island, n, weaponList, timeLimit);
         const player = {
             position: island[0],
             lastPosition: island[0],
-            attack: 2,
+            attack: 5,
             life: 100,
             icon: "\u{1F9CD}",
             weapon: weaponList[0],
             savePoint: false,
+            savePointPosition: island[0],
             treasure: 0,
             gameOver: false,
             poison: 0,
@@ -452,20 +507,21 @@ function main() {
             lastTurnMove: 0,
             atackMonster(monster) {
                 if (this.weapon.durability > 0) {
-                    alert(this.weapon.attack);
+                    alert(`Seu ataque atinge o monstro em cheio, causando (-${this.weapon.attack} HP)`);
                     monster.damage(this.weapon.attack, island, timeLimit);
                     this.weapon.durability -= 1;
                 }
                 else {
-                    alert(this.attack);
+                    alert(`Seu ataque atinge o monstro em cheio, causando (-${this.attack} HP)`);
                     monster.damage(this.attack, island, timeLimit);
                 }
-                player.moveTo(player.position);
+                player.lastPosition = player.position;
             },
             pickWeapon(weapon) {
                 this.lastTurnMove = timeLimit;
-                weapon.pickWeapon();
+                weapon.pickWeapon(island);
                 this.weapon = weapon;
+                this.moveTo(player.position);
             },
             damage(dmg) {
                 this.life -= dmg;
@@ -476,7 +532,8 @@ function main() {
                         this.respawn();
                     }
                     else {
-                        alert(gameOver);
+                        player.position.element.innerText = player.position.element.innerText.replace(player.icon, '\u{1F480}');
+                        alert('Game Over');
                     }
                 }
             },
@@ -487,35 +544,49 @@ function main() {
                 this.lastTurnMove = timeLimit;
                 this.display();
             },
-            randomMove() {
+            randomMove(monster) {
+                this.damage(monster.attack);
                 this.lastTurnMove = timeLimit;
-                let newPosition = randomNum(0, this.position.neighbors.length);
+                let newPosition = randomNum(0, this.position.neighbors.length - 1);
                 this.moveTo(this.position.neighbors[newPosition]);
+                alert(`O monstro desfere um golpe certeiro causando (-${monster.attack} HP) mas Você consegue escapar.`);
             },
             display() {
                 this.position.element.textContent = this.icon + this.position.element.textContent;
             },
             respawn() {
-                if (this.savePoint) {
-                }
-                else {
-                    this.gameOver = true;
-                }
+                this.position.element.textContent = this.position.element.textContent.replace(this.icon, '');
+                player.position = player.savePointPosition;
+                player.life = 100;
+                player.savePointPosition.element.classList.remove('checkPoint');
+                player.savePoint = false;
+                this.display();
+                alert("Após o confronto, você se sente revigorado e pronto para enfrentar novos desafios.");
             },
             dropWeapon() {
                 this.lastTurnMove = timeLimit;
                 player.weapon.position = player.position;
                 player.weapon.display();
                 player.weapon = weaponList[0];
+            },
+            serchHerb() {
+                if (this.position.element.innerText.includes(herbIcon)) {
+                    const lifeRecover = randomNum(6, 15);
+                    this.life += lifeRecover;
+                    const life = document.getElementById('life');
+                    life.textContent = `${"\u{2764}"} ${this.life}%`;
+                    this.position.element.innerText = this.position.element.innerText.replace(herbIcon, '');
+                    alert(`Você encontra uma erva medicinal e a consome, recuperando (+${lifeRecover} HP).`);
+                }
             }
         };
+        player.weapon.durability = 0;
         monsterList.map(monster => monster.display());
         island[0].element.textContent = player.icon;
         treasure.position.element.textContent = treasure.icon;
         treasure.position.safe = true;
         timerAtt(timer, timeLimit);
         weaponList.map(weapon => weapon.display());
-        let gameOver = false;
         yield wait();
         while (!player.gameOver) {
             yield playerMove(player, island, monsterList, weaponList, treasure, timeLimit);
