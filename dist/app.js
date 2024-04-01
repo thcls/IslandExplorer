@@ -356,6 +356,7 @@ function playerMove(player, island, monsterList, weaponList, treasure, timeLimit
         var _a, _b;
         let path = [];
         trapCheck(player);
+        player.serchHerb();
         let monster = monsterCheck(player, monsterList);
         let weapon = weaponCheck(player, weaponList);
         if (monster != undefined || weapon != undefined || (player.weapon.durability > 0 && ((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)))) {
@@ -462,6 +463,7 @@ function main() {
         const nodeMutipli = 7;
         const n = MatrixSize * nodeMutipli;
         const weaponList = [];
+        const herbIcon = '\u{1F33F}';
         const treasure = {
             icon: '\u{1FA99}',
             percent: 100,
@@ -477,6 +479,9 @@ function main() {
         let checkPoints = [island[randomNum(1, n - 1)], island[randomNum(1, n - 1)]];
         const m = getEdgesNumber(island);
         let timeLimit = m * 3;
+        for (let i = 0; i < 10; i++) {
+            island[randomNum(1, island.length - 1)].element.innerText += herbIcon;
+        }
         checkPoints = checkPoints.map((position) => {
             do {
                 position = island[randomNum(1, n - 1)];
@@ -527,6 +532,7 @@ function main() {
                         this.respawn();
                     }
                     else {
+                        player.position.element.innerText = player.position.element.innerText.replace(player.icon, '\u{1F480}');
                         alert('Game Over');
                     }
                 }
@@ -562,6 +568,16 @@ function main() {
                 player.weapon.position = player.position;
                 player.weapon.display();
                 player.weapon = weaponList[0];
+            },
+            serchHerb() {
+                if (this.position.element.innerText.includes(herbIcon)) {
+                    const lifeRecover = randomNum(6, 15);
+                    this.life += lifeRecover;
+                    const life = document.getElementById('life');
+                    life.textContent = `${"\u{2764}"} ${this.life}%`;
+                    this.position.element.innerText = this.position.element.innerText.replace(herbIcon, '');
+                    alert(`Você encontra uma erva medicinal e a consome, recuperando (+${lifeRecover} HP).`);
+                }
             }
         };
         player.weapon.durability = 0;
