@@ -20,7 +20,9 @@ class Monster {
         let newPosition = randomNum(0, this.position.neighbors.length);
         if ((this.lastTurnMove > timeLimit) && !(newPosition > this.position.neighbors.length - 1) && (this.position.neighbors.length != 0) && !(this.position.neighbors[newPosition].safe)) {
             this.position.element.textContent = this.position.element.textContent.replace(this.icon, '');
+            this.position.monster = false;
             this.position = this.position.neighbors[newPosition];
+            this.position.monster = true;
             this.lastTurnMove = timeLimit;
             this.display();
         }
@@ -73,12 +75,32 @@ class GraphNode {
         this.coordinates = coordinates;
         this.trapDamage = 0;
         this.safe = false;
+        this.danger = 0;
+        this.f = 0;
+        this.g = 0;
+        this.h = 0;
+        this.monster = false;
     }
     getCoordenates() {
         return `${this.coordinates[0]} ${this.coordinates[1]}`;
     }
     sameCoordenates(node) {
         return (this.coordinates[0] === node.coordinates[0] && this.coordinates[1] === node.coordinates[1]);
+    }
+    heuristic(goal) {
+        // Por exemplo, use a distância de Manhattan como heurística
+        let t = 0;
+        if (this.trapDamage > 0) {
+            t += 2;
+        }
+        if (this.safe) {
+            t += -2;
+        }
+        if (this.monster) {
+            t += 3;
+        }
+        let h = Math.abs(this.coordinates[0] - goal.coordinates[0]) + Math.abs(this.coordinates[1] - goal.coordinates[1]);
+        return h + t;
     }
 }
 class Weapon {
@@ -96,9 +118,9 @@ class Weapon {
     display() {
         this.position.element.textContent += this.icon;
     }
-    pickWeapon(island) {
+    pickWeapon(playerPocket) {
         this.position.element.textContent = this.position.element.textContent.replace(this.icon, '');
-        this.position = island[0];
+        this.position = playerPocket;
     }
     msg() {
         const wMsg = {
@@ -109,6 +131,8 @@ class Weapon {
         alert(wMsg[this.icon]);
     }
 }
+const newTd = document.createElement('td');
+const playerPocket = new GraphNode(newTd, [-1, -1]);
 function BFS(v1, target) {
     const visited = {};
     const queue = [];
@@ -129,35 +153,56 @@ function BFS(v1, target) {
     }
     return isReachable;
 }
-function BFSPath(v1, target) {
-    const queue = [];
-    const dist = {};
-    const pred = {};
-    queue.push(v1);
-    dist[v1.getCoordenates()] = { dist: 0, position: v1 };
-    pred[v1.getCoordenates()] = v1;
-    while (queue.length > 0) {
-        const vu = queue.shift();
-        vu.neighbors.forEach(neighbor => {
-            if (!(neighbor.getCoordenates() in dist)) {
-                dist[neighbor.getCoordenates()] = { dist: Infinity, position: neighbor };
-                pred[neighbor.getCoordenates()] = vu;
+function aStar(start, goal, island) {
+    const openSet = [];
+    const closedSet = [];
+    console.log(openSet);
+    openSet.map(position => {
+        position.f = 0;
+        position.g = 0;
+        position.h = 0;
+    });
+    start.f = 0;
+    start.g = 0;
+    start.h = 0;
+    openSet.push(start);
+    while (openSet.length > 0) {
+        let currentNode = openSet[0];
+        let currentIndex = 0;
+        for (let i = 1; i < openSet.length; i++) {
+            if (openSet[i].f < currentNode.f) {
+                currentNode = openSet[i];
+                currentIndex = i;
             }
-            if (dist[vu.getCoordenates()].dist + 1 < dist[neighbor.getCoordenates()].dist) {
-                dist[neighbor.getCoordenates()].dist = dist[vu.getCoordenates()].dist + 1;
-                pred[neighbor.getCoordenates()] = vu;
-                queue.push(neighbor);
+        }
+        openSet.splice(currentIndex, 1);
+        closedSet.push(currentNode);
+        if (currentNode === goal) {
+            const path = [];
+            let current = currentNode;
+            while (current) {
+                path.unshift(current);
+                current = current.neighbors.find(neighbor => neighbor.g === current.g - 1);
             }
-        });
+            console.log(path);
+            return path;
+        }
+        for (const neighbor of currentNode.neighbors) {
+            if (closedSet.find(node => node === neighbor)) {
+                continue;
+            }
+            const gScore = currentNode.g + 1;
+            if (!openSet.find(node => node === neighbor) || gScore < neighbor.g) {
+                neighbor.g = gScore;
+                neighbor.h = neighbor.heuristic(goal);
+                neighbor.f = neighbor.g + neighbor.h;
+                if (!openSet.find(node => node === neighbor)) {
+                    openSet.push(neighbor);
+                }
+            }
+        }
     }
-    const path = [];
-    path.unshift(target);
-    let temp = target;
-    while (!v1.sameCoordenates(temp)) {
-        temp = pred[temp.getCoordenates()];
-        path.unshift(temp);
-    }
-    return path;
+    return [];
 }
 function randomNum(a, b) {
     return Math.floor(Math.random() * (b - a + 1)) + a;
@@ -272,10 +317,12 @@ function fightOrFlight(island, monsters, timeLimit) {
             weakest = m;
         }
     }
-    weakest.damage(strongest.attack, island, timeLimit);
+    weakest.damage(weakest.life + 10, island, timeLimit);
+    weakest.lastTurnMove = timeLimit;
     strongest.lastTurnMove = timeLimit;
     for (let m of monsters) {
         if (m.lastTurnMove > timeLimit) {
+            m.damage(strongest.life, island, timeLimit);
             m.flight(timeLimit);
         }
     }
@@ -289,6 +336,7 @@ function playerInput(monster, weapon, player, treasure, timeLimit) {
         opCount++;
         msg += `Opção ${opCount} - Atacar monstro.\n`;
         options[`${opCount}`] = () => {
+            player.inCombat = 2;
             player.atackMonster(monster);
             player.lastTurnMove = timeLimit;
         };
@@ -296,6 +344,7 @@ function playerInput(monster, weapon, player, treasure, timeLimit) {
         msg += `Opção ${opCount} - Sentindo-se sobrecarregado, você opta por uma retirada estratégica para evitar o perigo imediato.\n`;
         options[`${opCount}`] = () => {
             player.randomMove(monster);
+            monster.lastTurnMove = timeLimit;
             player.lastTurnMove = timeLimit;
         };
     }
@@ -313,23 +362,29 @@ function playerInput(monster, weapon, player, treasure, timeLimit) {
                 player.pickWeapon(weapon);
             }
         };
+    }
+    if ((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)) {
+        opCount++;
+        msg += `Opção ${opCount} - Pegar tesouro.\n`;
+        options[`${opCount}`] = () => {
+            treasure.getTreasure(player);
+            player.lastTurnMove = timeLimit;
+        };
+    }
+    if (player.weapon.durability > 0) {
+        opCount++;
+        msg += `Opção ${opCount} - Soltar arma equipada\n   - Dano da arma: ${player.weapon.attack}\n   - Durabilidade: ${player.weapon.durability}\n\n`;
+        options[`${opCount}`] = () => {
+            player.dropWeapon();
+            player.lastTurnMove = timeLimit;
+        };
+    }
+    if (weapon != undefined || player.weapon.durability > 0) {
         opCount++;
         msg += `Opção ${opCount} - Continuar sua jornada.\n`;
         options[`${opCount}`] = () => {
             player.lastTurnMove = 0;
             return;
-        };
-    }
-    if (((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)) && player.weapon.durability > 0) {
-        opCount++;
-        msg += `Opção ${opCount} - Pegar tesouro.\n`;
-        options[`${opCount}`] = () => {
-            treasure.getTreasure(player);
-        };
-        opCount++;
-        msg += `Opção ${opCount} - Soltar arma equipada.\n`;
-        options[`${opCount}`] = () => {
-            player.dropWeapon();
         };
     }
     const playerInput = prompt(msg);
@@ -353,29 +408,36 @@ function playerInput(monster, weapon, player, treasure, timeLimit) {
 }
 function playerMove(player, island, monsterList, weaponList, treasure, timeLimit) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a, _b;
+        var _a;
         let path = [];
         trapCheck(player);
         player.serchHerb();
         let monster = monsterCheck(player, monsterList);
         let weapon = weaponCheck(player, weaponList);
-        if (monster != undefined || weapon != undefined || (player.weapon.durability > 0 && ((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)))) {
+        if (monster == undefined) {
+            player.inCombat = 0;
+        }
+        if (player.inCombat > 0) {
+            player.atackMonster(monster);
+            player.inCombat -= 1;
+            player.lastTurnMove = timeLimit;
+        }
+        else if (monster != undefined || weapon != undefined || (player.weapon.durability > 0)) {
             playerInput(monster, weapon, player, treasure, timeLimit);
         }
         if (player.lastTurnMove != timeLimit) {
-            if ((_b = treasure.position) === null || _b === void 0 ? void 0 : _b.sameCoordenates(player.position)) {
+            if ((_a = treasure.position) === null || _a === void 0 ? void 0 : _a.sameCoordenates(player.position)) {
                 treasure.position.element.innerText = treasure.position.element.innerText.replace(treasure.icon, '');
-                player.treasure = 100;
+                treasure.position = playerPocket;
+                treasure.getTreasure(player);
             }
             if (player.treasure === 0) {
-                path = BFSPath(player.position, treasure.position);
+                path = aStar(player.position, treasure.position, island);
             }
             else {
-                path = BFSPath(player.position, island[0]);
+                path = aStar(player.position, island[0], island);
             }
-            if (path.length > 1) {
-                yield player.moveTo(path[1]);
-            }
+            yield player.moveTo(path[1]);
             if (player.position.safe && !(island[0].sameCoordenates(player.position))) {
                 player.savePoint = true;
                 player.savePointPosition = player.position;
@@ -384,20 +446,19 @@ function playerMove(player, island, monsterList, weaponList, treasure, timeLimit
     });
 }
 function wait() {
-    return new Promise(resolve => setTimeout(resolve, 1000));
+    return new Promise(resolve => setTimeout(resolve, 700));
 }
 function monstersMove(monsterList, island, timeLimit, player) {
     return __awaiter(this, void 0, void 0, function* () {
         monsterList.map(monster => {
             if (monster.position.sameCoordenates(player.position)) {
-                console.log(player.position.coordinates);
-                console.log(player.lastPosition.coordinates);
-                console.log(!player.position.sameCoordenates(player.lastPosition));
                 if (!player.position.sameCoordenates(player.lastPosition)) {
                     monster.msg();
                 }
                 else {
-                    player.damage(monster.attack);
+                    const dmg = randomNum(2, monster.attack);
+                    alert(`O monstro desfere um golpe certeiro causando (-${dmg} HP)`);
+                    player.damage(dmg);
                 }
                 monster.lastTurnMove = timeLimit;
             }
@@ -407,9 +468,6 @@ function monstersMove(monsterList, island, timeLimit, player) {
             }
             else {
                 monster.randomMove(timeLimit);
-            }
-            if (monster.position.trapDamage > 0) {
-                monster.damage(monster.position.trapDamage, island, timeLimit);
             }
         });
     });
@@ -472,8 +530,13 @@ function main() {
                 treasure.position = position;
             },
             getTreasure(player) {
-                player.treasure = this.percent;
-            }
+                player.treasure = player.life;
+                const treasure = document.getElementById('treasure');
+                if (player.weapon.durability > 0) {
+                    player.treasure -= player.weapon.attack;
+                }
+                treasure.textContent = `${this.icon} ${player.treasure}%`;
+            },
         };
         const island = generateIsland(MatrixSize, nodeMutipli, treasure, n);
         let checkPoints = [island[randomNum(1, n - 1)], island[randomNum(1, n - 1)]];
@@ -505,6 +568,7 @@ function main() {
             poison: 0,
             actionAvailable: false,
             lastTurnMove: 0,
+            inCombat: 0,
             atackMonster(monster) {
                 if (this.weapon.durability > 0) {
                     alert(`Seu ataque atinge o monstro em cheio, causando (-${this.weapon.attack} HP)`);
@@ -519,9 +583,19 @@ function main() {
             },
             pickWeapon(weapon) {
                 this.lastTurnMove = timeLimit;
-                weapon.pickWeapon(island);
+                weapon.pickWeapon(playerPocket);
                 this.weapon = weapon;
                 this.moveTo(player.position);
+                if (player.treasure > 0) {
+                    player.treasure -= player.weapon.attack;
+                    const treasure = document.getElementById('treasure');
+                    if (player.treasure <= 0) {
+                        player.treasure = 0;
+                        player.gameOver = true;
+                        treasure.textContent = `${0} ${0}%`;
+                    }
+                    treasure.textContent = `${this.icon} ${player.treasure}%`;
+                }
             },
             damage(dmg) {
                 this.life -= dmg;
@@ -535,6 +609,15 @@ function main() {
                         player.position.element.innerText = player.position.element.innerText.replace(player.icon, '\u{1F480}');
                         alert('Game Over');
                     }
+                }
+                if (player.treasure > 0) {
+                    player.treasure -= dmg;
+                    const treasure = document.getElementById('treasure');
+                    if (player.treasure <= 0) {
+                        treasure.textContent = `${0} ${0}%`;
+                        player.gameOver = true;
+                    }
+                    treasure.textContent = `${this.icon} ${player.treasure}%`;
                 }
             },
             moveTo(newPosition) {
@@ -560,6 +643,7 @@ function main() {
                 player.life = 100;
                 player.savePointPosition.element.classList.remove('checkPoint');
                 player.savePoint = false;
+                player.weapon.durability = 0;
                 this.display();
                 alert("Após o confronto, você se sente revigorado e pronto para enfrentar novos desafios.");
             },
@@ -568,11 +652,20 @@ function main() {
                 player.weapon.position = player.position;
                 player.weapon.display();
                 player.weapon = weaponList[0];
+                this.lastTurnMove = timeLimit;
             },
             serchHerb() {
                 if (this.position.element.innerText.includes(herbIcon)) {
+                    if (player.life == 100) {
+                        return;
+                    }
                     const lifeRecover = randomNum(6, 15);
                     this.life += lifeRecover;
+                    if (player.life > 100) {
+                        player.life = 100;
+                        return;
+                    }
+                    this.lastTurnMove = timeLimit;
                     const life = document.getElementById('life');
                     life.textContent = `${"\u{2764}"} ${this.life}%`;
                     this.position.element.innerText = this.position.element.innerText.replace(herbIcon, '');
