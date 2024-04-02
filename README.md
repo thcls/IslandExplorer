@@ -22,4 +22,4 @@ A ilha é composta de vários caminhos distintos que seguem entre paredões de r
 florestas, além de uma única praia onde se pode aportar em segurança devido as muitas rochas em seu entorno. É nesta
 praia que a jornada começa para todos sem um retorno, até este momento.
 
-[Link para o jogo](#)
+[Link para o jogo](https://thcls.github.io/IslandExplorer/)
