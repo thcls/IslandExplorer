@@ -27,7 +27,6 @@ class Monster{
     display(){
         this.position.element.textContent = this.position.element.textContent + this.icon;
     }
-
     flight(timeLimit: number){
         let newPosition = randomNum(0,this.position.neighbors.length - 1);
         let i = 2
@@ -42,14 +41,12 @@ class Monster{
             this.display()
         }
     }
-
     damage(dmg: number, island: GraphNode[], timeLimit: number){
         this.life -= dmg;
         if(this.life < 0){
             this.respawn(island, timeLimit)
         }
     }
-
     respawn(island: GraphNode[],timeLimit: number){
         const newPosition = randomNum(0, island.length - 1);
         this.position.element.textContent = this.position.element.textContent!.replace(this.icon, '');
@@ -97,17 +94,17 @@ class GraphNode{
     sameCoordenates(node: GraphNode){
         return (this.coordinates![0] === node.coordinates![0] && this.coordinates![1] === node.coordinates![1])
     }
-    heuristic(goal: GraphNode): number {
+    heuristic(goal: GraphNode, life: number): number {
         // Por exemplo, use a distância de Manhattan como heurística
         let t = 0
         if(this.trapDamage > 0){
-            t += 2
+            t += 15
         }
         if(this.safe){
             t += -2
         }
         if(this.monster){
-            t += 3
+            t += 20
         }
         let h = Math.abs(this.coordinates![0] - goal.coordinates![0]) + Math.abs(this.coordinates![1] - goal.coordinates![1]);
         return h + t
@@ -180,7 +177,7 @@ function BFS(v1: GraphNode, target: GraphNode) {
     }
     return isReachable;
 }
-function aStar(start: GraphNode, goal: GraphNode, island: GraphNode[]) {
+function aStar(start: GraphNode, goal: GraphNode, life:number) {
     const openSet: GraphNode[] = []
     const closedSet: GraphNode[] = []
     console.log(openSet)
@@ -230,7 +227,7 @@ function aStar(start: GraphNode, goal: GraphNode, island: GraphNode[]) {
 
             if (!openSet.find(node => node === neighbor) || gScore < neighbor.g) {
                 neighbor.g = gScore;
-                neighbor.h = neighbor.heuristic(goal);
+                neighbor.h = neighbor.heuristic(goal, life);
                 neighbor.f = neighbor.g + neighbor.h;
 
                 if (!openSet.find(node => node === neighbor)) {
@@ -468,9 +465,9 @@ async function playerMove(player: any, island: GraphNode[], monsterList: Monster
         }
 
         if(player.treasure === 0){
-            path = aStar(player.position, treasure.position!, island)
+            path = aStar(player.position, treasure.position!, player.life)
         }else{
-            path = aStar(player.position, island[0], island)
+            path = aStar(player.position, island[0], player.life)
         }
         await player.moveTo(path[1])
         if(player.position.safe && !(island[0].sameCoordenates(player.position))){
@@ -548,6 +545,7 @@ function weaponCheck(player: any, weaponList: Weapon[]){
 async function main(){
 
     const timer = document.getElementById('timer')!;
+
     const MatrixSize = 10;
     const nodeMutipli = 7
     const n = MatrixSize * nodeMutipli
@@ -719,16 +717,18 @@ async function main(){
 
     await wait()
     while(!player.gameOver){
-            await playerMove(player, island, monsterList, weaponList, treasure, timeLimit);
+        await playerMove(player, island, monsterList, weaponList, treasure, timeLimit);
         await monstersMove(monsterList, island, timeLimit, player)
         timeLimit--;
         timerAtt(timer, timeLimit);
-        if (timeLimit === 0 || (player.life < 0 && !(player.savePoint)) || (player.position.sameCoordenates(island[0]) && player.treasure > 0)){
+        if (timeLimit === 0 || (player.life <= 0 && !(player.savePoint)) || (player.position.sameCoordenates(island[0]) && player.treasure > 0)){
             player.gameOver = true
         }
-        await wait()
+        await wait();
     }
-    
+    if(player.treasure > 0){
+        alert("You win!");
+    }
 }
 
 main()
